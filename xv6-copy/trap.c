@@ -77,7 +77,29 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
+  
+  case T_PGFLT: {
+    uint fault_va = rcr2();
 
+    // Kernel fault 
+    if (myproc() == 0 || (tf->cs & 3)==0){
+      cprintf("Kernel page fault at ca 0x%x\n", fault_va);
+      panic("trap");
+    }
+
+    struct proc *p = myproc();
+
+    cprintf("PID %d (%s): page fault at VA 0x%x, EIP 0x%x\n",
+      p-> pid, p-> name, fault_va, tf->eip);
+    
+    if(fault_va < PGSIZE){
+      cprintf(" --> Likely NULL pointer dereference\n");
+    }
+
+    p->killed = 1;
+    break;
+  }
+  
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){

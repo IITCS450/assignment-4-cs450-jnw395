@@ -32,7 +32,7 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+static pte_t * 
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -188,7 +188,7 @@ inituvm(pde_t *pgdir, char *init, uint sz)
     panic("inituvm: more than a page");
   mem = kalloc();
   memset(mem, 0, PGSIZE);
-  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_W|PTE_U);
+  mappages(pgdir, (char*)PGSIZE, PGSIZE, V2P(mem), PTE_W|PTE_U);
   memmove(mem, init, sz);
 }
 
@@ -322,7 +322,7 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
-  for(i = 0; i < sz; i += PGSIZE){
+  for(i = PGSIZE; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
@@ -382,6 +382,52 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
     buf += n;
     va = va0 + PGSIZE;
   }
+  return 0;
+}
+
+int
+mprotect(void *addr, int len)
+{
+  if((uint)addr % PGSIZE != 0 || len <= 0)
+    return -1;
+
+  int npages = PGROUNDUP(len) / PGSIZE;
+  struct proc *p = myproc();
+
+  if((uint)addr >= KERNBASE || (uint)addr + npages*PGSIZE > KERNBASE)
+    return -1;
+
+  for(int i = 0; i < npages; i++){
+    pte_t *pte = walkpgdir(p->pgdir, (char*)addr + i*PGSIZE, 0);
+    if(!pte || !(*pte & PTE_P))
+      return -1;
+    *pte &= ~PTE_W;
+  }
+
+  lcr3(V2P(p->pgdir));
+  return 0;
+}
+
+int
+munprotect(void *addr, int len)
+{
+  if((uint)addr % PGSIZE != 0 || len <= 0)
+    return -1;
+
+  int npages = PGROUNDUP(len) / PGSIZE;
+  struct proc *p = myproc();
+
+  if((uint)addr >= KERNBASE || (uint)addr + npages*PGSIZE > KERNBASE)
+    return -1;
+
+  for(int i = 0; i < npages; i++){
+    pte_t *pte = walkpgdir(p->pgdir, (char*)addr + i*PGSIZE, 0);
+    if(!pte || !(*pte & PTE_P))
+      return -1;
+    *pte |= PTE_W;
+  }
+
+  lcr3(V2P(p->pgdir));
   return 0;
 }
 
